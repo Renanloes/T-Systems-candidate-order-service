@@ -1,39 +1,82 @@
-# T-Systems International Developer Challenge
+## **T-Systems International Developer Challenge**
 
-## Context
+Order Management service built with **Java 21** and **Spring Boot**, integrating the external Pricing API provided for the challenge.
 
-You have joined a team that maintains an Order Management service for an international retail customer. The application already exists and is in use by other developers. Your task is to understand the codebase, introduce a new integration, and make engineering decisions when requirements and dependencies are imperfect.
+The main goal of the implementation is to allow orders to survive temporary Pricing API failures without requiring the store user to submit the same order again.
 
-This is **not** a speed-coding exercise. We are interested in how you analyze a system, validate assumptions, make trade-offs, test your solution, and explain your decisions.
+---
 
-## Timebox
+## **Requirements**
 
-Please spend approximately **4-6 hours** on the exercise. We do not award extra points for adding a large number of features. If you run out of time, document what you would do next and why.
+* **Java 21+**
+* **Maven 3.9+**
+* **Docker**
 
-## AI tools
+---
 
-You are welcome to use coding assistants and LLMs such as GitHub Copilot, Codex, Claude Code, Cursor, or similar tools.
+## **Running the Pricing API**
 
-We are **not** evaluating how much code you can type without assistance. We are evaluating whether you understand the problem and the solution you submit. You should be prepared to explain, challenge, and modify code produced with AI assistance.
+Start the external Pricing API with:
 
-## The existing application
+```bash
+docker run --rm --name pricing-api -p 8090:8080 eduardosassegdcbrazil/tsystems-pricing-api:1.0
+```
 
-The starter service is a small Java 21 / Spring Boot application.
+Check that it is running:
 
-It currently exposes:
+```bash
+curl http://localhost:8090/health
+```
 
-- `POST /api/orders` - create an order;
-- `GET /api/orders/{id}` - retrieve an order;
-- `GET /api/orders` - list orders;
-- `GET /` - a small server-rendered order dashboard.
+The application uses the following default Pricing API URL:
 
-The current implementation uses an in-process local price catalog and confirms an order immediately.
+```text
+http://localhost:8090
+```
 
-Example request:
+It can be changed with the `PRICING_API_URL` environment variable.
+
+---
+
+## **Running the Application**
+
+Run the tests:
+
+```bash
+mvn test
+```
+
+Start the application:
+
+```bash
+mvn spring-boot:run
+```
+
+The application starts on:
+
+```text
+http://localhost:8080
+```
+
+# **Browser Dashboard**
+
+```text
+http://localhost:8080/
+```
+
+# **REST API**
+
+```text
+/api/orders
+```
+
+---
+
+## **Example Request**
 
 ```bash
 curl -X POST http://localhost:8080/api/orders \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
   -d '{
     "customerId": "customer-42",
     "productId": "SKU-1001",
@@ -43,167 +86,267 @@ curl -X POST http://localhost:8080/api/orders \
   }'
 ```
 
-The in-memory repository and simple domain model are intentional starter constraints. You may change them if your solution requires it, but do not redesign the entire application without a clear reason.
+---
 
-## Browser UI
+## **Pricing API Integration**
 
-The starter includes a deliberately small browser interface at `http://localhost:8080/`. It is rendered on the server with Thymeleaf and contains only HTML and CSS on the client side.
+The local `LocalCatalogPriceService` is no longer used as the source of truth for new orders.
 
-The screen lets a store user:
+The application requests pricing from:
 
-- submit an order without using `curl`;
-- see the stable order ID returned by the application;
-- see whether an order is confirmed or needs attention;
-- see whether a price has been captured;
-- refresh the page to observe later state changes.
-
-The UI is intentionally incomplete for the new integration. Evolve it together with your domain model so that a user can understand whether pricing succeeded, is still pending, failed, or recovered according to the decisions you make.
-
-### Frontend constraints
-
-For this challenge, keep the browser side intentionally simple:
-
-- use **HTML and CSS only** in the browser;
-- do **not** add JavaScript or TypeScript;
-- do **not** add a frontend framework or CSS framework;
-- server-side rendering with the supplied Thymeleaf setup is allowed and expected;
-- keep forms and status information usable with semantic HTML, associated labels, keyboard navigation, and a narrow/mobile viewport;
-- do not communicate an important status by color alone.
-
-We are not looking for elaborate visual design. We want to see that core HTML/CSS and usability fundamentals are present, and that the UI makes the behavior of the backend integration observable.
-
-## New customer requirement
-
-The local price catalog is no longer the source of truth.
-
-For every new order, the application must use the **external Pricing API** to obtain the unit price before treating that order as successfully priced.
-
-The Pricing API is operated by another company. You do not control it, and you should not assume that it always behaves as expected.
-
-Your goal is to integrate with it in a way that you consider appropriate for a production-oriented application, while keeping the scope appropriate for this exercise.
-
-Some requirements are intentionally underspecified. Make reasonable assumptions and document them.
-
-## Running the external Pricing API
-
-You will receive the name of a Docker image published by T-Systems for this challenge.
-
-Run it locally with:
-
-```bash
-docker run --rm --name pricing-api -p 8090:8080 eduardosassegdcbrazil/tsystems-pricing-api:1.0
+```http
+GET /v1/prices/{productId}
 ```
 
-Or create a `.env` file from `.env.example` and run:
+using:
 
-```bash
-docker compose up pricing-api
+* `productId`
+* `country`
+* `currency`
+
+The HTTP communication is isolated in `PricingApiClient`.
+
+The client handles:
+
+* successful price responses;
+* HTTP errors;
+* communication failures;
+* invalid price data.
+
+---
+
+## **Order Lifecycle**
+
+An order starts as:
+
+```text
+PENDING_PRICING
 ```
 
-Check that it is running:
+when a valid price has not been obtained yet.
 
-```bash
-curl http://localhost:8090/health
+When pricing succeeds:
+
+```text
+PENDING_PRICING
+        ↓
+   CONFIRMED
 ```
 
-The API contract is available in [`docs/pricing-api.openapi.yaml`](docs/pricing-api.openapi.yaml).
+For a provider error that is treated as non-recoverable:
 
-The provider exposes `GET /v1/products` with product IDs that can be used during development. Do not assume that all valid products or all requests behave identically.
-
-Treat the Docker image as a **third-party black box**. Reverse engineering or depending on its internal implementation is outside the scope of the challenge. Your solution should rely only on observable behavior and the supplied API contract.
-
-## Your task
-
-Implement a solution that:
-
-1. replaces the local catalog as the pricing source for new orders;
-2. integrates the existing application with the Pricing API;
-3. handles dependency behavior and failures in a way you can justify;
-4. preserves or deliberately evolves the existing Order API;
-5. evolves the supplied HTML/CSS dashboard so pricing state and recovery behavior are understandable to a user;
-6. adds or updates automated tests for the behavior you consider important;
-7. documents assumptions, important decisions, and known limitations;
-8. addresses the additional customer request in [`CHANGE_REQUEST.md`](CHANGE_REQUEST.md).
-
-There is no single expected architecture. We will accept different approaches when the decisions are coherent and well explained.
-
-## What we are deliberately not specifying
-
-We are not giving you a checklist of every failure mode or production concern. Investigate the dependency, decide what matters, and show us how your application behaves.
-
-You are not required to:
-
-- introduce a specific resilience library;
-- use a specific HTTP client;
-- add a database, queue, or cloud service;
-- solve every possible production concern;
-- preserve every starter-code decision.
-
-Prefer the smallest design that clearly supports the decisions you want to demonstrate.
-
-## Running the starter application
-
-Requirements:
-
-- Java 21+
-- Maven 3.9+
-- Docker, for the external Pricing API
-
-Run the tests:
-
-```bash
-mvn test
+```text
+PENDING_PRICING
+        ↓
+NEEDS_ATTENTION
 ```
 
-Run the application:
+The order keeps the **same UUID** during these state changes.
 
-```bash
-mvn spring-boot:run
+This prevents the creation of a second order when pricing is delayed or temporarily unavailable.
+
+---
+
+## **Pricing Outage Handling**
+
+The order is created and stored before pricing is considered successful.
+
+When the Pricing API is unavailable:
+
+1. The application generates a stable order ID.
+2. The order is stored as `PENDING_PRICING`.
+3. No price or total is assigned.
+4. The order remains available in the application.
+5. The pricing retry mechanism can attempt the request again.
+6. When a valid price is obtained, the same order is updated to `CONFIRMED`.
+
+A successful HTTP response from the Order Management service therefore does **not** mean that the order has already been successfully priced.
+
+---
+
+## **Retry Strategy**
+
+Pending orders are checked periodically by `PricingRetryService`.
+
+For the scope of this exercise, the retry interval is intentionally short so that the recovery behavior can be demonstrated easily.
+
+A production system would use a configurable retry interval and a more complete backoff and failure policy.
+
+---
+
+## **Browser Dashboard**
+
+The supplied Thymeleaf dashboard was kept and extended instead of replacing it.
+
+The dashboard can show:
+
+* **CONFIRMED** — pricing was successfully obtained;
+* **AWAITING PRICING** — the order exists but pricing is not available yet;
+* **NEEDS ATTENTION** — pricing failed in a way that requires attention.
+
+The interface uses:
+
+* server-side Thymeleaf rendering;
+* semantic HTML;
+* the existing CSS;
+* no JavaScript;
+* no frontend framework.
+
+The screen communicates the business state to the store user instead of exposing stack traces or internal technical errors.
+
+---
+
+## **Important Engineering Decisions**
+
+# **Stable Order ID**
+
+The order ID is generated before the Pricing API request.
+
+This ensures that a temporary pricing failure does not force the user to submit the order again.
+
+# **Separate Pricing Client**
+
+The external API communication is isolated in:
+
+```text
+PricingApiClient
 ```
 
-The application starts on `http://localhost:8080`.
+This keeps HTTP details outside the main order business logic.
 
-Open `http://localhost:8080/` in a browser to use the supplied HTML/CSS dashboard. The REST API remains available under `/api/orders`.
+# **Keep the Existing Architecture**
 
-## Submission
+The original controller, service, repository and domain structure were kept.
 
-Please provide:
+The solution adds only the components needed for the new pricing behavior instead of rebuilding the application.
 
-1. a link to your Git repository containing the source code;
-2. a concise README section describing how to run your solution;
-3. your assumptions and important engineering decisions;
-4. a link to an **8-12 minute video in English or German**. A private/unlisted YouTube link is fine.
+# **In-Memory Repository**
 
-Do not include secrets or credentials in your repository.
+The existing:
 
-## Video discussion points
+```text
+InMemoryOrderRepository
+```
 
-Use the video to show the application working, but focus on reasoning rather than a feature tour. Please cover all of the following:
+was kept.
 
-1. Which part of the existing codebase did you need to understand before making your change?
-2. What behavior of the Pricing API influenced your design the most?
-3. Show one failure scenario and explain how your application reacts.
-4. Describe one ambiguous requirement and the assumption you made.
-5. What is one technical decision in your solution that you are not completely satisfied with?
-6. If traffic increased by 100x, what would you reconsider first?
-7. Which parts of the solution were influenced by an AI assistant, and how did you validate or challenge its suggestions?
-8. How did `CHANGE_REQUEST.md` affect your original design?
-9. Use the browser UI to demonstrate at least one successfully priced order and one non-happy-path pricing situation. Explain what the screen tells the user and what it deliberately does not expose.
+This avoids introducing a database or additional infrastructure that was not required by the exercise.
 
-## What we evaluate
+The trade-off is that orders do not survive an application restart.
 
-We look at the submission as a whole. A smaller solution with strong reasoning can score higher than a larger solution with more infrastructure.
+# **Order Record**
 
-The main dimensions are:
+`Order` remains a Java `record`.
 
-- problem understanding and assumptions;
-- engineering decisions and trade-offs;
-- correctness and code quality;
-- testing and validation;
-- resilience and edge-case thinking;
-- ability to evolve existing code rather than simply replacing it;
-- HTML/CSS fundamentals and whether the screen makes backend state understandable;
-- communication in English or German;
-- clarity about AI-assisted work and how it was verified.
+Because records are immutable, a state transition creates a new `Order` instance while keeping the same UUID.
 
-Good luck, and have fun investigating the system.
+---
+
+## **Assumptions**
+
+The challenge leaves some behavior open to implementation decisions.
+
+The main assumptions are:
+
+* The external Pricing API is the source of truth for new prices.
+* A valid price is required before an order can become `CONFIRMED`.
+* Temporary provider or connectivity failures are retryable.
+* A product that cannot be found is treated as a problem requiring attention.
+* The order keeps the same ID during its lifecycle.
+* The in-memory repository is acceptable for the scope of the exercise.
+* The retry configuration is simplified for demonstration purposes.
+
+---
+
+## **Known Limitations**
+
+This implementation is intentionally small and focused on the challenge requirements.
+
+The current solution does not provide the full persistence and resilience capabilities expected from a production system.
+
+For a production implementation, I would reconsider:
+
+* durable database storage;
+* configurable retry policies and exponential backoff;
+* stronger error classification;
+* request timeouts;
+* distributed processing for pending orders;
+* concurrency control;
+* metrics and monitoring;
+* distributed tracing;
+* operational recovery mechanisms.
+
+---
+
+## **Testing**
+
+The important scenarios covered by the implementation are:
+
+* successful pricing;
+* Pricing API unavailable;
+* order stored without a price;
+* stable order ID;
+* transition from `PENDING_PRICING` to `CONFIRMED`;
+* provider errors that require attention;
+* retry of pending pricing.
+
+The external Pricing API is treated as a **black-box dependency** according to the supplied OpenAPI contract.
+
+---
+
+## **CHANGE_REQUEST.md**
+
+`CHANGE_REQUEST.md` changed the original design mainly by requiring an order to survive a Pricing API outage.
+
+The original flow was:
+
+```text
+Create Order
+    ↓
+Get Price
+    ↓
+Confirm
+    ↓
+Save
+```
+
+The new flow is:
+
+```text
+Create Order
+    ↓
+Generate stable ID
+    ↓
+Save as PENDING_PRICING
+    ↓
+Request Pricing
+    ↓
+Confirm when a valid price is available
+```
+
+This requirement affected the order lifecycle, repository usage, pricing integration and browser dashboard.
+
+---
+
+## **AI Assistance**
+
+An AI assistant was used during development to help understand the existing codebase, identify affected components and discuss implementation approaches.
+
+The suggestions were checked against:
+
+* the existing source code;
+* the supplied Pricing API contract;
+* `CHANGE_REQUEST.md`;
+* the observed application behavior.
+
+AI-generated code was reviewed and tested before being used.
+
+The final implementation was intentionally kept close to the original project structure.
+
+---
+
+## **Security**
+
+No secrets, credentials or private keys are included in this repository.
+
+Configuration values such as the Pricing API URL are provided through application configuration or environment variables.

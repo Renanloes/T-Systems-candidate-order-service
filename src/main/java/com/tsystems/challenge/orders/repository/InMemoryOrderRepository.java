@@ -1,6 +1,7 @@
 package com.tsystems.challenge.orders.repository;
 
 import com.tsystems.challenge.orders.domain.Order;
+import com.tsystems.challenge.orders.domain.OrderStatus;
 import org.springframework.stereotype.Repository;
 
 import java.util.Comparator;
@@ -12,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
 public class InMemoryOrderRepository implements OrderRepository {
+
     private final Map<UUID, Order> orders = new ConcurrentHashMap<>();
 
     @Override
@@ -28,6 +30,14 @@ public class InMemoryOrderRepository implements OrderRepository {
     @Override
     public List<Order> findAll() {
         return orders.values().stream()
+                .sorted(Comparator.comparing(Order::createdAt))
+                .toList();
+    }
+
+    @Override
+    public List<Order> findByStatus(OrderStatus status) {
+        return orders.values().stream()
+                .filter(order -> order.status() == status)
                 .sorted(Comparator.comparing(Order::createdAt))
                 .toList();
     }

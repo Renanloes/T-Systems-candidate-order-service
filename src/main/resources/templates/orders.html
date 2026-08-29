@@ -90,6 +90,10 @@
             <strong class="metric-value" th:text="${confirmedCount}">0</strong>
         </article>
         <article class="metric">
+            <span class="metric-label">Awaiting pricing</span>
+            <strong class="metric-value" th:text="${pendingPricingCount}">0</strong>
+        </article>
+        <article class="metric">
             <span class="metric-label">Needs attention</span>
             <strong class="metric-value" th:text="${attentionCount}">0</strong>
         </article>
@@ -131,8 +135,13 @@
                 <tbody>
                 <tr th:each="order : ${orders}">
                     <td>
-                        <span class="status" th:classappend="${order.status.name() == 'CONFIRMED'} ? ' status-confirmed' : ' status-attention'"
-                              th:text="${order.status}">CONFIRMED</span>
+                        <span class="status"
+                                    th:classappend="${order.status.name() == 'CONFIRMED'} ? ' status-confirmed' :
+                                    (${order.status.name() == 'PENDING_PRICING'} ? ' status-pending' : ' status-attention')"
+                                    th:text="${order.status.name() == 'CONFIRMED'} ? 'CONFIRMED' :
+                                    (${order.status.name() == 'PENDING_PRICING'} ? 'AWAITING PRICING' : 'NEEDS ATTENTION')">
+                        CONFIRMED
+                        </span>
                     </td>
                     <td><code class="order-id" th:text="${order.id}">order-id</code></td>
                     <td th:text="${order.customerId}">customer-42</td>
@@ -141,7 +150,11 @@
                     <td th:text="${order.quantity}">1</td>
                     <td>
                         <span th:if="${order.unitPrice != null}" th:text="|${order.unitPrice} ${order.currency}|">19.99 EUR</span>
-                        <span class="not-available" th:unless="${order.unitPrice != null}">Not priced</span>
+                        <span class="not-available"
+                              th:if="${order.unitPrice == null and order.status.name() == 'PENDING_PRICING'}">Price not obtained yet</span>
+
+                        <span class="not-available"
+                              th:if="${order.unitPrice == null and order.status.name() == 'NEEDS_ATTENTION'}">Pricing failed</span>
                     </td>
                     <td>
                         <span th:if="${order.totalPrice != null}" th:text="|${order.totalPrice} ${order.currency}|">19.99 EUR</span>

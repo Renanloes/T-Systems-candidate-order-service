@@ -19,6 +19,7 @@ import java.util.UUID;
 
 @Controller
 public class OrderWebController {
+
     private final OrderService orderService;
 
     public OrderWebController(OrderService orderService) {
@@ -27,14 +28,18 @@ public class OrderWebController {
 
     @GetMapping("/")
     public String dashboard(
-            @RequestParam(name = "created", required = false) UUID createdOrderId,
+            @RequestParam(name = "created", required = false)
+            UUID createdOrderId,
             Model model
     ) {
         if (!model.containsAttribute("orderForm")) {
             model.addAttribute("orderForm", new CreateOrderForm());
         }
+
         model.addAttribute("createdOrderId", createdOrderId);
+
         addDashboardData(model);
+
         return "orders";
     }
 
@@ -52,14 +57,19 @@ public class OrderWebController {
 
         try {
             Order order = orderService.create(form.toRequest());
+
             redirectAttributes.addAttribute("created", order.id());
+
             return "redirect:/";
+
         } catch (RuntimeException ex) {
             model.addAttribute(
                     "integrationError",
-                    "The order could not be accepted. Review how the application handles Pricing API failures."
+                    "The order could not be accepted."
             );
+
             addDashboardData(model);
+
             return "orders";
         }
     }
@@ -72,7 +82,15 @@ public class OrderWebController {
         long confirmed = orders.stream()
                 .filter(order -> order.status() == OrderStatus.CONFIRMED)
                 .count();
-        long awaitingAttention = orders.size() - confirmed;
+
+        long pendingPricing = orders.stream()
+                .filter(order -> order.status() == OrderStatus.PENDING_PRICING)
+                .count();
+
+        long needsAttention = orders.stream()
+                .filter(order -> order.status() == OrderStatus.NEEDS_ATTENTION)
+                .count();
+
         long withoutPrice = orders.stream()
                 .filter(order -> order.unitPrice() == null)
                 .count();
@@ -80,7 +98,8 @@ public class OrderWebController {
         model.addAttribute("orders", orders);
         model.addAttribute("orderCount", orders.size());
         model.addAttribute("confirmedCount", confirmed);
-        model.addAttribute("attentionCount", awaitingAttention);
+        model.addAttribute("pendingPricingCount", pendingPricing);
+        model.addAttribute("attentionCount", needsAttention);
         model.addAttribute("unpricedCount", withoutPrice);
     }
 }

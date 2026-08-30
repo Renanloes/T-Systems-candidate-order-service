@@ -1,352 +1,280 @@
-## **T-Systems International Developer Challenge**
+# T-Systems International Developer Challenge
 
-Order Management service built with **Java 21** and **Spring Boot**, integrating the external Pricing API provided for the challenge.
+Solution for the T-Systems International Developer Challenge.
 
-The main goal of the implementation is to allow orders to survive temporary Pricing API failures without requiring the store user to submit the same order again.
+The original application used a local price catalog to obtain product prices.
 
----
+The application was changed to use the external Pricing API provided by T-Systems.
 
-## **Requirements**
+The main goal of the change is to allow an order to exist even when the Pricing API is temporarily unavailable.
 
-* **Java 21+**
-* **Maven 3.9+**
-* **Docker**
+## Requirements
 
----
+* Java 21+
+* Maven 3.9+
+* Docker
 
-## **Running the Pricing API**
+## Running the Pricing API
 
 Start the external Pricing API with:
 
-```bash
+```bash id="n2zyc9"
 docker run --rm --name pricing-api -p 8090:8080 eduardosassegdcbrazil/tsystems-pricing-api:1.0
 ```
 
 Check that it is running:
 
-```bash
+```bash id="btl43i"
 curl http://localhost:8090/health
 ```
 
-The application uses the following default Pricing API URL:
+The application uses this default Pricing API URL:
 
-```text
+```text id="ldverw"
 http://localhost:8090
 ```
 
-It can be changed with the `PRICING_API_URL` environment variable.
+The URL can also be changed with the `PRICING_API_URL` environment variable.
 
----
-
-## **Running the Application**
+## Running the application
 
 Run the tests:
 
-```bash
+```bash id="rbyigx"
 mvn test
 ```
 
 Start the application:
 
-```bash
+```bash id="qh5yh0"
 mvn spring-boot:run
 ```
 
 The application starts on:
 
-```text
+```text id="erz68p"
 http://localhost:8080
 ```
 
-# **Browser Dashboard**
+Dashboard:
 
-```text
+```text id="rh7jrv"
 http://localhost:8080/
 ```
 
-# **REST API**
+REST API:
 
-```text
-/api/orders
+```text id="idf8at"
+http://localhost:8080/api/orders
 ```
 
----
+## API
 
-## **Example Request**
+Create an order:
 
-```bash
-curl -X POST http://localhost:8080/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customerId": "customer-42",
-    "productId": "SKU-1001",
-    "quantity": 2,
-    "country": "DE",
-    "currency": "EUR"
-  }'
+```http id="uer206"
+POST /api/orders
 ```
 
----
+Example:
 
-## **Pricing API Integration**
+```json id="mq79ti"
+{
+  "customerId": "customer-42",
+  "productId": "SKU-1001",
+  "quantity": 2,
+  "country": "DE",
+  "currency": "EUR"
+}
+```
 
-The local `LocalCatalogPriceService` is no longer used as the source of truth for new orders.
+Get an order:
 
-The application requests pricing from:
+```http id="dvl9qf"
+GET /api/orders/{id}
+```
 
-```http
+List orders:
+
+```http id="fyyup3"
+GET /api/orders
+```
+
+## Main Changes
+
+### External Pricing API
+
+The local `LocalCatalogPriceService` is no longer used to obtain prices for new orders.
+
+A dedicated `PricingApiClient` communicates with the external Pricing API.
+
+The application requests prices using:
+
+```text id="4t1e07"
 GET /v1/prices/{productId}
 ```
 
-using:
+with the order country and currency.
 
-* `productId`
-* `country`
-* `currency`
+The returned amount is converted to `BigDecimal` and used to calculate the order total.
 
-The HTTP communication is isolated in `PricingApiClient`.
+### Order State
 
-The client handles:
+The order status was extended to support the pricing lifecycle:
 
-* successful price responses;
-* HTTP errors;
-* communication failures;
-* invalid price data.
+* `PENDING_PRICING`
+* `CONFIRMED`
+* `NEEDS_ATTENTION`
 
----
+A new order receives a UUID before the pricing request is made.
 
-## **Order Lifecycle**
+The order is first stored as `PENDING_PRICING`.
 
-An order starts as:
+If a valid price is received, the same order ID is stored as `CONFIRMED`.
 
-```text
-PENDING_PRICING
-```
+If the Pricing API returns a client-side error such as `404`, the order is changed to `NEEDS_ATTENTION`.
 
-when a valid price has not been obtained yet.
+If the Pricing API is temporarily unavailable or returns a server-side error, the order remains `PENDING_PRICING`.
 
-When pricing succeeds:
+### Pricing Retry
 
-```text
-PENDING_PRICING
-        ↓
-   CONFIRMED
-```
+Orders with `PENDING_PRICING` are checked by a scheduled retry service.
 
-For a provider error that is treated as non-recoverable:
+The current implementation retries pending pricing every 10 seconds.
 
-```text
-PENDING_PRICING
-        ↓
-NEEDS_ATTENTION
-```
+When pricing becomes available again, the same order ID is used and the order moves to `CONFIRMED`.
 
-The order keeps the **same UUID** during these state changes.
+The retry interval is intentionally short so that the recovery behavior can be demonstrated during the exercise.
 
-This prevents the creation of a second order when pricing is delayed or temporarily unavailable.
+### Repository
 
----
+The existing `InMemoryOrderRepository` was kept.
 
-## **Pricing Outage Handling**
+A `findByStatus` operation was added so that pending orders can be located by the retry service.
 
-The order is created and stored before pricing is considered successful.
+The repository uses the order UUID as its key, allowing an updated order representation to replace the previous one while keeping the same ID.
 
-When the Pricing API is unavailable:
+### Browser Dashboard
 
-1. The application generates a stable order ID.
-2. The order is stored as `PENDING_PRICING`.
-3. No price or total is assigned.
-4. The order remains available in the application.
-5. The pricing retry mechanism can attempt the request again.
-6. When a valid price is obtained, the same order is updated to `CONFIRMED`.
+The existing server-rendered Thymeleaf dashboard was kept and extended.
 
-A successful HTTP response from the Order Management service therefore does **not** mean that the order has already been successfully priced.
+It now distinguishes between:
 
----
+* `CONFIRMED`
+* `AWAITING PRICING`
+* `NEEDS ATTENTION`
 
-## **Retry Strategy**
+Orders without a price are shown as not yet priced or as having a pricing failure.
 
-Pending orders are checked periodically by `PricingRetryService`.
+No JavaScript, TypeScript, frontend framework, or CSS framework was added.
 
-For the scope of this exercise, the retry interval is intentionally short so that the recovery behavior can be demonstrated easily.
+## Assumptions
 
-A production system would use a configurable retry interval and a more complete backoff and failure policy.
+* The Pricing API is the source of truth for new order prices.
+* A valid price must be obtained before an order can become `CONFIRMED`.
+* A temporary pricing failure must not cause the order itself to be lost.
+* HTTP `4xx` responses are treated as problems that require attention.
+* HTTP `5xx` responses and connection failures are treated as recoverable pricing failures.
+* The retry interval is 10 seconds for this exercise.
+* The in-memory repository is sufficient for the scope of the challenge.
+* The third-party Pricing API is treated as a black box and only its documented contract is used.
 
----
+These classifications are exercise assumptions because the customer did not explicitly define all temporary and permanent provider failures.
 
-## **Browser Dashboard**
+## Important Engineering Decisions
 
-The supplied Thymeleaf dashboard was kept and extended instead of replacing it.
+### Create the order before pricing
 
-The dashboard can show:
+The order receives a stable UUID and is stored before the Pricing API result is known.
 
-* **CONFIRMED** — pricing was successfully obtained;
-* **AWAITING PRICING** — the order exists but pricing is not available yet;
-* **NEEDS ATTENTION** — pricing failed in a way that requires attention.
+This prevents a temporary pricing outage from forcing the store user to submit the same order again.
 
-The interface uses:
+### Separate Pricing API communication
 
-* server-side Thymeleaf rendering;
-* semantic HTML;
-* the existing CSS;
-* no JavaScript;
-* no frontend framework.
+A dedicated `PricingApiClient` is responsible for communicating with the external API.
 
-The screen communicates the business state to the store user instead of exposing stack traces or internal technical errors.
+This keeps HTTP communication and provider-specific details outside the main order business logic.
 
----
+### Keep the existing domain model
 
-## **Important Engineering Decisions**
+The existing `Order` record was kept.
 
-# **Stable Order ID**
+Because records are immutable, a new `Order` instance is created when the pricing state changes, while keeping the same UUID.
 
-The order ID is generated before the Pricing API request.
+This represents the same business order with updated data instead of creating a second order type.
 
-This ensures that a temporary pricing failure does not force the user to submit the order again.
+### Keep the existing repository
 
-# **Separate Pricing Client**
+The challenge already provides an in-memory repository and does not require a database.
 
-The external API communication is isolated in:
+The solution therefore avoids adding unnecessary infrastructure.
 
-```text
-PricingApiClient
-```
+## Known Limitations and Considerations
 
-This keeps HTTP details outside the main order business logic.
+The repository is still in memory, so orders are lost when the application restarts.
 
-# **Keep the Existing Architecture**
+The retry policy is intentionally simple and uses a fixed 10-second interval.
 
-The original controller, service, repository and domain structure were kept.
+The classification of provider failures is based on assumptions made for this exercise and would need a more detailed policy in a production system.
 
-The solution adds only the components needed for the new pricing behavior instead of rebuilding the application.
+The current application does not provide order cancellation or order editing.
 
-# **In-Memory Repository**
+These operations would require explicit business rules, especially for orders that are still waiting for pricing.
 
-The existing:
+A possible future improvement would be a lightweight file-based persistence mechanism for pending orders. This could preserve pending orders across an application or machine restart without introducing a full database. This was not implemented because persistent storage was outside the scope of the exercise.
 
-```text
-InMemoryOrderRepository
-```
+### Discarded Product Selection Approach
 
-was kept.
+During development, I considered adding a product selector based on the Pricing API `/v1/products` endpoint.
 
-This avoids introducing a database or additional infrastructure that was not required by the exercise.
+I decided not to keep this approach because it added another dependency on the external API to the order form and increased the complexity of the failure path, while not being required by CR-002.
 
-The trade-off is that orders do not survive an application restart.
+The final implementation therefore keeps the original product input and focuses the external integration on the pricing flow.
 
-# **Order Record**
+## Testing
 
-`Order` remains a Java `record`.
+The automated tests were updated to reflect the external Pricing API integration.
 
-Because records are immutable, a state transition creates a new `Order` instance while keeping the same UUID.
-
----
-
-## **Assumptions**
-
-The challenge leaves some behavior open to implementation decisions.
-
-The main assumptions are:
-
-* The external Pricing API is the source of truth for new prices.
-* A valid price is required before an order can become `CONFIRMED`.
-* Temporary provider or connectivity failures are retryable.
-* A product that cannot be found is treated as a problem requiring attention.
-* The order keeps the same ID during its lifecycle.
-* The in-memory repository is acceptable for the scope of the exercise.
-* The retry configuration is simplified for demonstration purposes.
-
----
-
-## **Known Limitations**
-
-This implementation is intentionally small and focused on the challenge requirements.
-
-The current solution does not provide the full persistence and resilience capabilities expected from a production system.
-
-For a production implementation, I would reconsider:
-
-* durable database storage;
-* configurable retry policies and exponential backoff;
-* stronger error classification;
-* request timeouts;
-* distributed processing for pending orders;
-* concurrency control;
-* metrics and monitoring;
-* distributed tracing;
-* operational recovery mechanisms.
-
----
-
-## **Testing**
-
-The important scenarios covered by the implementation are:
+The main scenarios to validate are:
 
 * successful pricing;
 * Pricing API unavailable;
-* order stored without a price;
-* stable order ID;
-* transition from `PENDING_PRICING` to `CONFIRMED`;
-* provider errors that require attention;
-* retry of pending pricing.
+* Pricing API returning an error;
+* order remaining identifiable by its stable ID;
+* pending order recovery after pricing becomes available;
+* order not being confirmed without a valid price;
+* browser order creation and validation;
+* dashboard rendering with the updated pricing flow.
 
-The external Pricing API is treated as a **black-box dependency** according to the supplied OpenAPI contract.
+## CHANGE_REQUEST.md
 
----
+CR-002 changed the original order creation flow.
 
-## **CHANGE_REQUEST.md**
+The starter application obtained the price before saving the order.
 
-`CHANGE_REQUEST.md` changed the original design mainly by requiring an order to survive a Pricing API outage.
+The new requirement requires the order to be accepted and assigned a stable ID even when the Pricing API is unavailable.
 
-The original flow was:
+This changed:
 
-```text
-Create Order
-    ↓
-Get Price
-    ↓
-Confirm
-    ↓
-Save
-```
+* the order creation sequence;
+* the order status model;
+* the repository behavior;
+* the pricing integration;
+* the retry mechanism;
+* the browser dashboard.
 
-The new flow is:
+## AI Assistance
 
-```text
-Create Order
-    ↓
-Generate stable ID
-    ↓
-Save as PENDING_PRICING
-    ↓
-Request Pricing
-    ↓
-Confirm when a valid price is available
-```
+An AI assistant was used during development to help understand the existing codebase and discuss implementation approaches.
 
-This requirement affected the order lifecycle, repository usage, pricing integration and browser dashboard.
+The assistance included understanding the existing flow, identifying the classes affected by the change, and helping with the development of code blocks for the Pricing API integration, order state handling, retry flow, tests, and dashboard changes.
 
----
+The suggestions were reviewed against the existing source code, the Pricing API contract, and `CHANGE_REQUEST.md`.
 
-## **AI Assistance**
+AI-generated suggestions were not treated as automatically correct. The implementation was adjusted when needed to preserve the existing application structure and keep the changes focused on the requirements of the exercise.
 
-An AI assistant was used during development to help understand the existing codebase, identify affected components and discuss implementation approaches.
+## Security
 
-The suggestions were checked against:
+No secrets, credentials, or private keys are included in the repository.
 
-* the existing source code;
-* the supplied Pricing API contract;
-* `CHANGE_REQUEST.md`;
-* the observed application behavior.
-
-AI-generated code was reviewed and tested before being used.
-
-The final implementation was intentionally kept close to the original project structure.
-
----
-
-## **Security**
-
-No secrets, credentials or private keys are included in this repository.
-
-Configuration values such as the Pricing API URL are provided through application configuration or environment variables.
+Configuration values required to run the application are kept in application configuration or environment variables.

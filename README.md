@@ -18,19 +18,19 @@ The main goal of the change is to allow an order to exist even when the Pricing 
 
 Start the external Pricing API with:
 
-```bash
+```bash id="n2zyc9"
 docker run --rm --name pricing-api -p 8090:8080 eduardosassegdcbrazil/tsystems-pricing-api:1.0
 ```
 
 Check that it is running:
 
-```bash
+```bash id="btl43i"
 curl http://localhost:8090/health
 ```
 
 The application uses this default Pricing API URL:
 
-```text
+```text id="ldverw"
 http://localhost:8090
 ```
 
@@ -40,31 +40,31 @@ The URL can also be changed with the `PRICING_API_URL` environment variable.
 
 Run the tests:
 
-```bash
+```bash id="rbyigx"
 mvn test
 ```
 
 Start the application:
 
-```bash
+```bash id="qh5yh0"
 mvn spring-boot:run
 ```
 
 The application starts on:
 
-```text
+```text id="erz68p"
 http://localhost:8080
 ```
 
 Dashboard:
 
-```text
+```text id="rh7jrv"
 http://localhost:8080/
 ```
 
 REST API:
 
-```text
+```text id="idf8at"
 http://localhost:8080/api/orders
 ```
 
@@ -72,13 +72,13 @@ http://localhost:8080/api/orders
 
 Create an order:
 
-```http
+```http id="uer206"
 POST /api/orders
 ```
 
 Example:
 
-```json
+```json id="mq79ti"
 {
   "customerId": "customer-42",
   "productId": "SKU-1001",
@@ -90,13 +90,13 @@ Example:
 
 Get an order:
 
-```http
+```http id="dvl9qf"
 GET /api/orders/{id}
 ```
 
 List orders:
 
-```http
+```http id="fyyup3"
 GET /api/orders
 ```
 
@@ -110,7 +110,7 @@ A dedicated `PricingApiClient` communicates with the external Pricing API.
 
 The application requests prices using:
 
-```text
+```text id="4t1e07"
 GET /v1/prices/{productId}
 ```
 
@@ -138,11 +138,13 @@ If the Pricing API is temporarily unavailable or returns a server-side error, th
 
 ### Pricing Retry
 
-A scheduled retry service was added to find orders in `PENDING_PRICING` and attempt pricing again.
+Orders with `PENDING_PRICING` are checked by a scheduled retry service.
 
-The current retry interval is 10 seconds.
+The current implementation retries pending pricing every 10 seconds.
 
-The retry behavior was implemented as part of the solution, but it was not fully validated before the timebox ended. Therefore, the retry path should be considered a known limitation of the submitted solution.
+When the Pricing API becomes available again, the pending order is retried and can move to `CONFIRMED` using the same order ID.
+
+The retry interval is intentionally short so that the recovery behavior can be demonstrated during the exercise.
 
 ### Repository
 
@@ -211,7 +213,7 @@ The solution therefore avoids adding unnecessary infrastructure.
 
 The repository is still in memory, so orders are lost when the application restarts.
 
-The retry policy is intentionally simple and uses a fixed 10-second interval. The retry mechanism was implemented but was not fully validated within the exercise timebox.
+The retry policy is intentionally simple and uses a fixed 10-second interval.
 
 The classification of provider failures is based on assumptions made for this exercise and would need a more detailed policy in a production system.
 
@@ -233,16 +235,17 @@ The final implementation therefore keeps the original product input and focuses 
 
 The existing automated tests were updated to reflect the external Pricing API integration.
 
-The main scenarios considered during validation were:
+The main scenarios validated during development were:
 
 * successful pricing;
 * Pricing API unavailable;
 * order remaining identifiable by its stable ID;
 * pending pricing behavior;
+* recovery after the Pricing API becomes available again;
 * browser order creation and validation;
 * dashboard rendering with the updated pricing states.
 
-The retry recovery path remains a known limitation because it was not fully validated before the exercise timebox ended.
+The recovery scenario was validated by checking the order through `GET /api/orders` after the Pricing API was restored.
 
 ## CHANGE_REQUEST.md
 

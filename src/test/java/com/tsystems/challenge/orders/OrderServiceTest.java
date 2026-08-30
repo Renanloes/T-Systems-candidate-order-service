@@ -4,19 +4,29 @@ import com.tsystems.challenge.orders.domain.Order;
 import com.tsystems.challenge.orders.domain.OrderStatus;
 import com.tsystems.challenge.orders.dto.CreateOrderRequest;
 import com.tsystems.challenge.orders.repository.InMemoryOrderRepository;
-import com.tsystems.challenge.orders.service.LocalCatalogPriceService;
 import com.tsystems.challenge.orders.service.OrderService;
+import com.tsystems.challenge.orders.service.PricingApiClient;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OrderServiceTest {
 
     @Test
-    void createsAndConfirmsAnOrderUsingTheLocalCatalog() {
+    void createsAndConfirmsAnOrderUsingThePricingApi() {
+        PricingApiClient pricingApiClient = mock(PricingApiClient.class);
+
+        when(pricingApiClient.getPrice(any(CreateOrderRequest.class)))
+                .thenReturn(new BigDecimal("19.99"));
+
         OrderService service = new OrderService(
                 new InMemoryOrderRepository(),
-                new LocalCatalogPriceService()
+                pricingApiClient
         );
 
         Order order = service.create(new CreateOrderRequest(

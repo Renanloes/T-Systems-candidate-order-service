@@ -41,12 +41,10 @@ public class PricingApiClient {
                             }
                     )
                     .onStatus(
-                            status -> status.value() >= 400,
+                            status -> status.isError(),
                             (response, body) -> {
                                 throw new PricingApiException(
-                                        "Pricing API returned HTTP "
-                                                + status.value(),
-                                        status.value()
+                                        "Pricing API returned an error"
                                 );
                             }
                     )

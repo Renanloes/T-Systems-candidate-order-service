@@ -4,6 +4,7 @@ import com.tsystems.challenge.orders.domain.Order;
 import com.tsystems.challenge.orders.domain.OrderStatus;
 import com.tsystems.challenge.orders.dto.CreateOrderRequest;
 import com.tsystems.challenge.orders.repository.OrderRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -19,6 +20,7 @@ public class OrderService {
     private final PricingApiClient pricingApiClient;
     private final Clock clock;
 
+    @Autowired
     public OrderService(
             OrderRepository orderRepository,
             PricingApiClient pricingApiClient
